@@ -62,6 +62,7 @@ CmultiWechatDlg::CmultiWechatDlg(CWnd* pParent /*=nullptr*/)
 void CmultiWechatDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_CHECK_AUTOSTART, m_autoStart);
 }
 
 BEGIN_MESSAGE_MAP(CmultiWechatDlg, CDialogEx)
@@ -71,6 +72,7 @@ BEGIN_MESSAGE_MAP(CmultiWechatDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_STAR, &CmultiWechatDlg::StartWechat)
 	ON_WM_DESTROY()
 	ON_COMMAND(ID_ALL_EXIT, &CmultiWechatDlg::OnAllExit)
+	ON_BN_CLICKED(IDC_CHECK_AUTOSTART, &CmultiWechatDlg::OnBnClickedCheckAutostart)
 END_MESSAGE_MAP()
 
 
@@ -96,27 +98,79 @@ void EnableMultiWeChat()
 	SetSecurityInfo(hMutex, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, pAcl, NULL);
 }
 
-void CmultiWechatDlg::LoadWechatPath()
+CString ReadRegValue(
+	_In_ HKEY hKey, 
+	_In_opt_ LPCWSTR lpSubKey, 
+	_In_opt_ LPCWSTR lpValueName, 
+	DWORD *pdwTpye)
 {
-	HKEY hKey = nullptr;
-	if (ERROR_SUCCESS != RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WeChat"), 0, KEY_READ, &hKey))
+	HKEY hHandle = nullptr;
+	if (ERROR_SUCCESS != RegOpenKeyEx(hKey, lpSubKey, 0, KEY_READ, &hHandle))
 	{
-		AfxMessageBox(TEXT("打开注册表失败!"));
+		return L"";
+	}
+
+	DWORD dwValue = MAX_PATH;
+	TCHAR szWechatPath[MAX_PATH + 1] = { 0 };
+	if (ERROR_SUCCESS != RegQueryValueEx(hHandle, lpValueName, 0, pdwTpye, (LPBYTE)szWechatPath, &dwValue))
+	{
+		CloseHandle(hHandle);
+		return L"";
+	}
+	CloseHandle(hHandle);
+
+	return CString(szWechatPath);
+}
+
+void DeleteRegValue(
+	_In_ HKEY hKey,
+	_In_opt_ LPCWSTR lpSubKey,
+	_In_opt_ LPCWSTR lpValueName)
+{
+	HKEY hHandle = nullptr;
+	if (ERROR_SUCCESS != RegOpenKeyEx(hKey, lpSubKey, 0, KEY_ALL_ACCESS, &hHandle))
+	{
 		return;
 	}
 
-	DWORD dwTpye = 0;
-	DWORD dwValue = MAX_PATH;
-	TCHAR szWechatPath[MAX_PATH + 1] = { 0 };
-	if (ERROR_SUCCESS != RegQueryValueEx(hKey, TEXT("DisplayIcon"), 0, &dwTpye, (LPBYTE)szWechatPath, &dwValue))
+	if (ERROR_SUCCESS != RegDeleteValue(hHandle, lpValueName))
 	{
-		CloseHandle(hKey);
-		AfxMessageBox(TEXT("读取注册表失败!"));
+		AfxMessageBox(L"注册表删除失败！");
+	}
+	CloseHandle(hHandle);
+}
+
+void WriteRegValue(
+	_In_ HKEY hKey,
+	_In_opt_ LPCWSTR lpSubKey,
+	_In_opt_ LPCWSTR lpValueName,
+	_In_opt_ DWORD      dwType,
+	_In_opt_ const BYTE* lpData,
+	_In_opt_ DWORD      cbData
+	)
+{
+	HKEY hHandle = nullptr;
+	if (ERROR_SUCCESS != RegOpenKeyEx(hKey, lpSubKey, 0, KEY_ALL_ACCESS, &hHandle))
+	{
 		return;
 	}
-	CloseHandle(hKey);
-	
-	m_strWechatPath = szWechatPath;
+
+	if (ERROR_SUCCESS != RegSetValueEx(hHandle, lpValueName, 0, dwType, lpData, cbData))
+	{
+		AfxMessageBox(L"注册表写入失败！");
+	}
+	RegFlushKey(hHandle);
+	CloseHandle(hHandle);
+}
+
+void CmultiWechatDlg::LoadWechatPath()
+{
+	DWORD dwTpye = 0;
+	m_strWechatPath = ReadRegValue(
+			HKEY_LOCAL_MACHINE,
+			TEXT("SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WeChat"),
+			TEXT("DisplayIcon"),
+			&dwTpye);
 	m_strWechatPath.TrimLeft(L"\"");
 	m_strWechatPath.TrimRight(L"\"");
 }
@@ -128,6 +182,20 @@ void CmultiWechatDlg::StartWechat()
 	}
 	else {
 		ShellExecute(NULL, TEXT("open"), m_strWechatPath, NULL, NULL, SW_SHOWNORMAL);
+	}
+}
+
+
+void CmultiWechatDlg::CheckAutoStart()
+{
+	DWORD dwTpye = 0;
+	CString strStartString = ReadRegValue(
+		HKEY_LOCAL_MACHINE,
+		TEXT("SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\"),
+		TEXT("MultiWechat"),
+		&dwTpye);
+	if (strStartString.GetLength() > 0) {
+		m_autoStart.SetCheck(1);
 	}
 }
 
@@ -166,8 +234,9 @@ BOOL CmultiWechatDlg::OnInitDialog()
 
 	EnableMultiWeChat();
 
+	CheckAutoStart();
+
 	LoadWechatPath();
-	//StartWechat();
 
 	m_notifyIcon.cbSize = sizeof(NOTIFYICONDATA);
 	m_notifyIcon.hIcon = m_hIcon;
@@ -284,4 +353,30 @@ LRESULT CmultiWechatDlg::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
 void CmultiWechatDlg::OnAllExit()
 {
 	PostMessage(WM_QUIT, 0, 0);
+}
+
+void CmultiWechatDlg::OnBnClickedCheckAutostart()
+{
+	CString strKey = TEXT("SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\");
+	CString strItemName = TEXT("MultiWechat");
+	if (m_autoStart.GetCheck()) {
+		TCHAR szPath[MAX_PATH + 1] = { 0 };
+		GetModuleFileName(NULL, szPath, MAX_PATH);
+		CString strPath;
+		strPath.Format(L"\"%s\" -background", szPath);
+		WriteRegValue(
+			HKEY_LOCAL_MACHINE,
+			strKey,
+			strItemName,
+			REG_SZ,
+			(const BYTE*)strPath.GetBuffer(0),
+			strPath.GetLength() * 2);
+		strPath.ReleaseBuffer();
+	}
+	else {
+		DeleteRegValue(
+			HKEY_LOCAL_MACHINE,
+			strKey,
+			strItemName);
+	}
 }

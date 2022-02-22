@@ -40,6 +40,9 @@ protected:
 public:
 	afx_msg void StartWechat();
 	afx_msg void OnDestroy();
+	void CheckAutoStart();
 	virtual LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam);
 	afx_msg void OnAllExit();
+	afx_msg void OnBnClickedCheckAutostart();
+	CButton m_autoStart;
 };

@@ -69,6 +69,16 @@ BOOL CmultiWechatApp::InitInstance()
 	// 例如修改为公司或组织名
 	SetRegistryKey(_T("应用程序向导生成的本地应用程序"));
 
+	HANDLE   hMutex = ::CreateMutex(NULL, TRUE, _T("_MULTI_WECHAT_FOR_WINDOWS_"));
+	if (hMutex != NULL)
+	{
+		if (GetLastError() == ERROR_ALREADY_EXISTS)
+		{
+			CloseHandle(hMutex);
+			return   FALSE;
+		}
+	}
+
 	CmultiWechatDlg dlg;
 	m_pMainWnd = &dlg;
 	INT_PTR nResponse = dlg.DoModal();
